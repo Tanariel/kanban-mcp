@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 // Import Planka operations
+import * as actions from "./operations/actions.js";
 import * as attachments from "./operations/attachments.js";
 import * as boardMemberships from "./operations/boardMemberships.js";
 import * as boards from "./operations/boards.js";
@@ -12,8 +13,10 @@ import * as cards from "./operations/cards.js";
 import * as comments from "./operations/comments.js";
 import * as labels from "./operations/labels.js";
 import * as lists from "./operations/lists.js";
+import * as notifications from "./operations/notifications.js";
 import * as projects from "./operations/projects.js";
 import * as tasks from "./operations/tasks.js";
+import * as users from "./operations/users.js";
 
 // Import custom tools
 import {
@@ -910,6 +913,147 @@ server.tool(
       case "delete":
         if (!args.id) throw new Error("id is required for delete action");
         result = await boardMemberships.deleteBoardMembership(args.id);
+        break;
+
+      default:
+        throw new Error(`Unknown action: ${args.action}`);
+    }
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+    };
+  }
+);
+
+// 11. User Manager
+server.tool(
+  "mcp_kanban_user_manager",
+  "Manage and search users with various operations",
+  {
+    action: z
+      .enum(["get_all", "get_one", "search_by_name", "search_by_email", "search_by_username"])
+      .describe("The action to perform"),
+    id: z.string().optional().describe("The ID of the user (required for get_one)"),
+    name: z.string().optional().describe("Name to search for (required for search_by_name)"),
+    email: z.string().optional().describe("Email to search for (required for search_by_email)"),
+    username: z.string().optional().describe("Username to search for (required for search_by_username)"),
+  },
+  async (args) => {
+    let result;
+
+    switch (args.action) {
+      case "get_all":
+        result = await users.getUsers();
+        break;
+
+      case "get_one":
+        if (!args.id) throw new Error("id is required for get_one action");
+        result = await users.getUser(args.id);
+        break;
+
+      case "search_by_name":
+        if (!args.name) throw new Error("name is required for search_by_name action");
+        result = await users.searchUsersByName(args.name);
+        break;
+
+      case "search_by_email":
+        if (!args.email) throw new Error("email is required for search_by_email action");
+        result = await users.searchUsersByEmail(args.email);
+        break;
+
+      case "search_by_username":
+        if (!args.username) throw new Error("username is required for search_by_username action");
+        result = await users.searchUsersByUsername(args.username);
+        break;
+
+      default:
+        throw new Error(`Unknown action: ${args.action}`);
+    }
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+    };
+  }
+);
+
+// 12. Notification Manager
+server.tool(
+  "mcp_kanban_notification_manager",
+  "Manage notifications with various operations",
+  {
+    action: z
+      .enum(["get_all", "get_one", "mark_as_read", "mark_all_as_read", "get_unread_count"])
+      .describe("The action to perform"),
+    id: z.string().optional().describe("The ID of the notification (required for get_one)"),
+    ids: z.array(z.string()).optional().describe("Array of notification IDs (required for mark_as_read)"),
+  },
+  async (args) => {
+    let result;
+
+    switch (args.action) {
+      case "get_all":
+        result = await notifications.getNotifications();
+        break;
+
+      case "get_one":
+        if (!args.id) throw new Error("id is required for get_one action");
+        result = await notifications.getNotification(args.id);
+        break;
+
+      case "mark_as_read":
+        if (!args.ids || args.ids.length === 0)
+          throw new Error("ids array is required for mark_as_read action");
+        result = await notifications.markNotificationsAsRead(args.ids);
+        break;
+
+      case "mark_all_as_read":
+        result = await notifications.markAllNotificationsAsRead();
+        break;
+
+      case "get_unread_count":
+        result = { count: await notifications.getUnreadNotificationsCount() };
+        break;
+
+      default:
+        throw new Error(`Unknown action: ${args.action}`);
+    }
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+    };
+  }
+);
+
+// 13. Action/Activity Manager
+server.tool(
+  "mcp_kanban_action_manager",
+  "Retrieve card activity history and actions",
+  {
+    action: z
+      .enum(["get_card_actions", "get_action", "get_activity_summary"])
+      .describe("The action to perform"),
+    id: z.string().optional().describe("The ID of the action (required for get_action)"),
+    cardId: z.string().optional().describe("The ID of the card (required for get_card_actions and get_activity_summary)"),
+  },
+  async (args) => {
+    let result;
+
+    switch (args.action) {
+      case "get_card_actions":
+        if (!args.cardId)
+          throw new Error("cardId is required for get_card_actions action");
+        result = await actions.getCardActions(args.cardId);
+        break;
+
+      case "get_action":
+        if (!args.id) throw new Error("id is required for get_action action");
+        result = await actions.getAction(args.id);
+        break;
+
+      case "get_activity_summary":
+        if (!args.cardId)
+          throw new Error("cardId is required for get_activity_summary action");
+        result = await actions.getCardActivitySummary(args.cardId);
         break;
 
       default:

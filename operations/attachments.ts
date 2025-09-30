@@ -6,11 +6,13 @@
  */
 
 import { z } from "zod";
-import { plankaRequest } from "../common/utils.js";
+import { getAuthenticationToken, plankaRequest } from "../common/utils.js";
 import { PlankaAttachmentSchema } from "../common/types.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import * as http from "http";
+import * as https from "https";
 import FormData from "form-data";
 
 // Schema definitions
@@ -85,59 +87,36 @@ export async function uploadAttachment(options: UploadAttachmentOptions) {
             throw new Error(`File not found: ${options.filePath}`);
         }
 
-        // Get environment variables
-        const baseUrl = process.env.PLANKA_BASE_URL;
-        const email = process.env.PLANKA_AGENT_EMAIL;
-        const password = process.env.PLANKA_AGENT_PASSWORD;
+        const baseUrl = process.env.PLANKA_BASE_URL || "http://localhost:3000";
+        const normalizedBaseUrl = baseUrl.endsWith("/api")
+            ? baseUrl.slice(0, -4)
+            : baseUrl;
 
-        if (!baseUrl || !email || !password) {
-            throw new Error(
-                "Missing required environment variables: PLANKA_BASE_URL, PLANKA_AGENT_EMAIL, PLANKA_AGENT_PASSWORD",
-            );
-        }
+        // Get auth token from the shared cache (same as other operations)
+        const token = await getAuthenticationToken();
 
-        // First, authenticate to get the token
-        const authResponse = await fetch(`${baseUrl}/api/access-tokens`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                emailOrUsername: email,
-                password: password,
-            }),
-        });
-
-        if (!authResponse.ok) {
-            const errorText = await authResponse.text();
-            throw new Error(
-                `Authentication failed (${authResponse.status}): ${errorText}`,
-            );
-        }
-
-        const authData = (await authResponse.json()) as {
-            item: string;
-        };
-        const token = authData.item;
-
-        // Create form data with the file
-        const form = new FormData();
+        // Create FormData with file stream
+        const formData = new FormData();
         const fileStream = fs.createReadStream(options.filePath);
         const fileName = path.basename(options.filePath);
 
-        form.append("file", fileStream, fileName);
+        formData.append("file", fileStream, fileName);
 
-        // Upload the file using a Promise to handle the stream properly
-        const url = new URL(baseUrl);
-        const isHttps = url.protocol === "https:";
+        // Upload using form-data's submit method (works with streams)
+        const uploadUrl = new URL(
+            `/api/cards/${options.cardId}/attachments`,
+            normalizedBaseUrl,
+        );
 
-        const uploadResult = await new Promise<any>((resolve, reject) => {
-            form.submit(
+        const result = await new Promise<any>((resolve, reject) => {
+            const protocol = uploadUrl.protocol === "https:" ? https : http;
+
+            formData.submit(
                 {
-                    host: url.hostname,
-                    port: url.port || (isHttps ? 443 : 80),
-                    protocol: url.protocol as "https:" | "http:",
-                    path: `/api/cards/${options.cardId}/attachments`,
+                    host: uploadUrl.hostname,
+                    port: uploadUrl.port || (uploadUrl.protocol === "https:" ? 443 : 80),
+                    path: uploadUrl.pathname,
+                    protocol: uploadUrl.protocol as "https:" | "http:",
                     method: "POST",
                     headers: {
                         Authorization: `Bearer ${token}`,
@@ -155,11 +134,18 @@ export async function uploadAttachment(options: UploadAttachmentOptions) {
                     });
 
                     res.on("end", () => {
-                        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                        if (
+                            res.statusCode && res.statusCode >= 200 &&
+                            res.statusCode < 300
+                        ) {
                             try {
                                 resolve(JSON.parse(data));
                             } catch (parseError) {
-                                reject(new Error(`Failed to parse response: ${data}`));
+                                reject(
+                                    new Error(
+                                        `Failed to parse response: ${data}`,
+                                    ),
+                                );
                             }
                         } else {
                             reject(
@@ -177,7 +163,7 @@ export async function uploadAttachment(options: UploadAttachmentOptions) {
             );
         });
 
-        const parsedResponse = AttachmentResponseSchema.parse(uploadResult);
+        const parsedResponse = AttachmentResponseSchema.parse(result);
         return parsedResponse.item;
     } catch (error) {
         throw new Error(
@@ -211,23 +197,7 @@ export async function uploadAttachmentFromUrl(
             fs.mkdirSync(tempDir, { recursive: true });
         }
 
-        // Determine filename
-        let filename = options.filename;
-        if (!filename) {
-            // Extract filename from URL
-            const urlPath = new URL(options.url).pathname;
-            filename = path.basename(urlPath);
-
-            // If still no filename or it's generic, generate one
-            if (!filename || filename === "/" || filename === "") {
-                const extension = options.url.match(/\.(jpg|jpeg|png|gif|pdf|doc|docx|txt|svg)$/i)?.[0] || "";
-                filename = `download_${Date.now()}${extension}`;
-            }
-        }
-
-        tempFilePath = path.join(tempDir, filename);
-
-        // Download the file with proper headers to avoid blocking
+        // Download the file first with proper headers to avoid blocking
         const response = await fetch(options.url, {
             headers: {
                 "User-Agent": "Mozilla/5.0 (compatible; KanbanMCP/1.0)",
@@ -241,9 +211,70 @@ export async function uploadAttachmentFromUrl(
             );
         }
 
+        // Determine filename (after download, so we can check Content-Type)
+        let filename = options.filename;
+        if (!filename) {
+            // Try to extract filename from URL first
+            const urlPath = new URL(options.url).pathname;
+            const urlFilename = path.basename(urlPath);
+
+            // Check if URL has a proper filename with extension
+            if (
+                urlFilename &&
+                urlFilename !== "/" &&
+                urlFilename !== "" &&
+                /\.[a-z0-9]{2,4}$/i.test(urlFilename)
+            ) {
+                filename = urlFilename;
+            } else {
+                // Generate filename based on Content-Type
+                const contentType = response.headers.get("content-type");
+                let extension = "";
+
+                if (contentType) {
+                    const mimeToExt: Record<string, string> = {
+                        "image/jpeg": ".jpg",
+                        "image/jpg": ".jpg",
+                        "image/png": ".png",
+                        "image/gif": ".gif",
+                        "image/svg+xml": ".svg",
+                        "image/webp": ".webp",
+                        "application/pdf": ".pdf",
+                        "text/plain": ".txt",
+                        "application/json": ".json",
+                        "application/msword": ".doc",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                            ".docx",
+                    };
+                    extension = mimeToExt[contentType.split(";")[0].trim()] || "";
+                }
+
+                // Fallback to regex on URL if no Content-Type match
+                if (!extension) {
+                    extension =
+                        options.url.match(
+                            /\.(jpg|jpeg|png|gif|pdf|doc|docx|txt|svg|webp|json)$/i,
+                        )?.[0] || ".bin";
+                }
+
+                filename = `download_${Date.now()}${extension}`;
+            }
+        }
+
+        tempFilePath = path.join(tempDir, filename);
+
         // Save to temp file
         const buffer = await response.arrayBuffer();
-        fs.writeFileSync(tempFilePath, Buffer.from(buffer));
+        const bufferData = Buffer.from(buffer);
+
+        // Validate we actually got content
+        if (bufferData.length === 0) {
+            throw new Error(
+                `Downloaded file is empty (0 bytes) from ${options.url}`,
+            );
+        }
+
+        fs.writeFileSync(tempFilePath, bufferData);
 
         // Upload to Planka
         const result = await uploadAttachment({

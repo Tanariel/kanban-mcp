@@ -95,6 +95,11 @@ async function getAuthToken(): Promise<string> {
   return authenticateAgent();
 }
 
+// Export for use by other modules that need direct token access (e.g., file uploads)
+export async function getAuthenticationToken(): Promise<string> {
+  return getAuthToken();
+}
+
 export async function plankaRequest(
   path: string,
   options: RequestOptions = {},

@@ -87,9 +87,16 @@ export const PlankaCommentSchema = z.object({
 export const PlankaAttachmentSchema = z.object({
   id: z.string(),
   cardId: z.string(),
-  userId: z.string(),
+  creatorUserId: z.string(),
   name: z.string(),
   url: z.string(),
+  dirname: z.string().optional(),
+  filename: z.string().optional(),
+  image: z.object({
+    width: z.number().optional(),
+    height: z.number().optional(),
+  }).nullable().optional(),
+  coverUrl: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string().nullable(),
 });

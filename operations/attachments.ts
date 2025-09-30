@@ -109,7 +109,10 @@ export async function uploadAttachment(options: UploadAttachmentOptions) {
         });
 
         if (!authResponse.ok) {
-            throw new Error(`Authentication failed: ${authResponse.statusText}`);
+            const errorText = await authResponse.text();
+            throw new Error(
+                `Authentication failed (${authResponse.status}): ${errorText}`,
+            );
         }
 
         const authData = (await authResponse.json()) as {
@@ -124,28 +127,57 @@ export async function uploadAttachment(options: UploadAttachmentOptions) {
 
         form.append("file", fileStream, fileName);
 
-        // Upload the file
-        const uploadResponse = await fetch(
-            `${baseUrl}/api/cards/${options.cardId}/attachments`,
-            {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    ...form.getHeaders(),
+        // Upload the file using a Promise to handle the stream properly
+        const url = new URL(baseUrl);
+        const isHttps = url.protocol === "https:";
+
+        const uploadResult = await new Promise<any>((resolve, reject) => {
+            form.submit(
+                {
+                    host: url.hostname,
+                    port: url.port || (isHttps ? 443 : 80),
+                    protocol: url.protocol as "https:" | "http:",
+                    path: `/api/cards/${options.cardId}/attachments`,
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
                 },
-                body: form as any, // Type assertion needed for form-data compatibility
-            },
-        );
+                (err, res) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
 
-        if (!uploadResponse.ok) {
-            const errorText = await uploadResponse.text();
-            throw new Error(
-                `Upload failed (${uploadResponse.status}): ${errorText}`,
+                    let data = "";
+                    res.on("data", (chunk) => {
+                        data += chunk;
+                    });
+
+                    res.on("end", () => {
+                        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                            try {
+                                resolve(JSON.parse(data));
+                            } catch (parseError) {
+                                reject(new Error(`Failed to parse response: ${data}`));
+                            }
+                        } else {
+                            reject(
+                                new Error(
+                                    `Upload failed (${res.statusCode}): ${data}`,
+                                ),
+                            );
+                        }
+                    });
+
+                    res.on("error", (error) => {
+                        reject(error);
+                    });
+                },
             );
-        }
+        });
 
-        const response = await uploadResponse.json();
-        const parsedResponse = AttachmentResponseSchema.parse(response);
+        const parsedResponse = AttachmentResponseSchema.parse(uploadResult);
         return parsedResponse.item;
     } catch (error) {
         throw new Error(
@@ -195,11 +227,17 @@ export async function uploadAttachmentFromUrl(
 
         tempFilePath = path.join(tempDir, filename);
 
-        // Download the file
-        const response = await fetch(options.url);
+        // Download the file with proper headers to avoid blocking
+        const response = await fetch(options.url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (compatible; KanbanMCP/1.0)",
+                "Accept": "*/*",
+            },
+        });
+
         if (!response.ok) {
             throw new Error(
-                `Failed to download file: ${response.statusText}`,
+                `Failed to download file from ${options.url}: HTTP ${response.status} ${response.statusText}`,
             );
         }
 

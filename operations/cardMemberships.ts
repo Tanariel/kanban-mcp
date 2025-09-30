@@ -62,7 +62,7 @@ const CardMembershipResponseSchema = z.object({
 export async function addCardMember(options: AddCardMemberOptions) {
     try {
         const response = await plankaRequest(
-            `/api/cards/${options.cardId}/card-memberships`,
+            `/api/cards/${options.cardId}/memberships`,
             {
                 method: "POST",
                 body: {
@@ -93,9 +93,12 @@ export async function addCardMember(options: AddCardMemberOptions) {
 export async function removeCardMember(options: RemoveCardMemberOptions) {
     try {
         const response = await plankaRequest(
-            `/api/cards/${options.cardId}/card-memberships/userId:${options.userId}`,
+            `/api/cards/${options.cardId}/memberships`,
             {
                 method: "DELETE",
+                body: {
+                    userId: options.userId,
+                },
             },
         );
         const parsedResponse = CardMembershipResponseSchema.parse(response);

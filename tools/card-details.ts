@@ -6,6 +6,7 @@ import { getLabels } from "../operations/labels.js";
 import { getProjects } from "../operations/projects.js";
 import { getBoards } from "../operations/boards.js";
 import { getLists } from "../operations/lists.js";
+import { getCardMembers } from "../operations/cardMemberships.js";
 
 /**
  * Zod schema for the getCardDetails function parameters
@@ -48,6 +49,9 @@ export async function getCardDetails(params: GetCardDetailsParams) {
 
         // Get comments for the card
         const comments = await getComments(card.id);
+
+        // Get members for the card
+        const members = await getCardMembers(card.id);
 
         // Find the board ID by searching through all projects and boards
         let boardId = null;
@@ -114,6 +118,7 @@ export async function getCardDetails(params: GetCardDetailsParams) {
 
         return {
             card,
+            members,
             taskItems: tasks,
             taskStats: {
                 total: totalTasks,

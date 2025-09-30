@@ -6,6 +6,7 @@ import { z } from "zod";
 // Import Planka operations
 import * as boardMemberships from "./operations/boardMemberships.js";
 import * as boards from "./operations/boards.js";
+import * as cardMemberships from "./operations/cardMemberships.js";
 import * as cards from "./operations/cards.js";
 import * as comments from "./operations/comments.js";
 import * as labels from "./operations/labels.js";
@@ -280,6 +281,11 @@ server.tool(
       .string()
       .optional()
       .describe("The ID of the card to get details for"),
+    includeRelated: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe("Whether to include related data (members, users, tasks, etc.) in get_one action"),
   },
   async (args) => {
     let result;
@@ -304,7 +310,7 @@ server.tool(
 
       case "get_one":
         if (!args.id) throw new Error("id is required for get_one action");
-        result = await cards.getCard(args.id);
+        result = await cards.getCard(args.id, args.includeRelated);
         break;
 
       case "update":
@@ -712,7 +718,57 @@ server.tool(
   }
 );
 
-// 8. Membership Manager
+// 8. Card Membership Manager
+server.tool(
+  "mcp_kanban_card_membership_manager",
+  "Manage card memberships (assign/unassign users to cards) with various operations",
+  {
+    action: z
+      .enum(["get_members", "add_member", "remove_member"])
+      .describe("The action to perform"),
+    cardId: z.string().describe("The ID of the card"),
+    userId: z
+      .string()
+      .optional()
+      .describe("The ID of the user (required for add_member and remove_member)"),
+  },
+  async (args) => {
+    let result;
+
+    switch (args.action) {
+      case "get_members":
+        result = await cardMemberships.getCardMembers(args.cardId);
+        break;
+
+      case "add_member":
+        if (!args.userId)
+          throw new Error("userId is required for add_member action");
+        result = await cardMemberships.addCardMember({
+          cardId: args.cardId,
+          userId: args.userId,
+        });
+        break;
+
+      case "remove_member":
+        if (!args.userId)
+          throw new Error("userId is required for remove_member action");
+        result = await cardMemberships.removeCardMember({
+          cardId: args.cardId,
+          userId: args.userId,
+        });
+        break;
+
+      default:
+        throw new Error(`Unknown action: ${args.action}`);
+    }
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+    };
+  }
+);
+
+// 9. Board Membership Manager
 server.tool(
   "mcp_kanban_membership_manager",
   "Manage board memberships with various operations",

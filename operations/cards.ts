@@ -250,11 +250,20 @@ export async function getCards(listId: string) {
  * Retrieves a specific card by ID
  *
  * @param {string} id - The ID of the card to retrieve
- * @returns {Promise<object>} The requested card
+ * @param {boolean} includeRelated - Whether to include related data (members, users, tasks, etc.)
+ * @returns {Promise<object>} The requested card, optionally with included related data
  */
-export async function getCard(id: string) {
+export async function getCard(id: string, includeRelated: boolean = false) {
     const response = await plankaRequest(`/api/cards/${id}`);
     const parsedResponse = CardResponseSchema.parse(response);
+
+    if (includeRelated && parsedResponse.included) {
+        return {
+            ...parsedResponse.item,
+            included: parsedResponse.included,
+        };
+    }
+
     return parsedResponse.item;
 }
 

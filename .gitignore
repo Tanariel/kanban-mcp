@@ -3,3 +3,9 @@ node_modules/
 .cursorrules
 .cursor/mcp.json
 .cursor
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+.idea

@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 // Import Planka operations
+import * as attachments from "./operations/attachments.js";
 import * as boardMemberships from "./operations/boardMemberships.js";
 import * as boards from "./operations/boards.js";
 import * as cardMemberships from "./operations/cardMemberships.js";
@@ -768,7 +769,84 @@ server.tool(
   }
 );
 
-// 9. Board Membership Manager
+// 9. Attachment Manager
+server.tool(
+  "mcp_kanban_attachment_manager",
+  "Manage card attachments (upload/delete files) with various operations",
+  {
+    action: z
+      .enum(["get_attachments", "upload", "upload_from_url", "delete"])
+      .describe("The action to perform"),
+    cardId: z
+      .string()
+      .optional()
+      .describe("The ID of the card (required for get_attachments, upload, and upload_from_url)"),
+    id: z
+      .string()
+      .optional()
+      .describe("The ID of the attachment (required for delete)"),
+    filePath: z
+      .string()
+      .optional()
+      .describe("The local file path to upload (required for upload action)"),
+    url: z
+      .string()
+      .optional()
+      .describe("The URL to download and upload (required for upload_from_url action)"),
+    filename: z
+      .string()
+      .optional()
+      .describe("Optional filename for upload_from_url (will be extracted from URL if not provided)"),
+  },
+  async (args) => {
+    let result;
+
+    switch (args.action) {
+      case "get_attachments":
+        if (!args.cardId)
+          throw new Error("cardId is required for get_attachments action");
+        result = await attachments.getAttachments(args.cardId);
+        break;
+
+      case "upload":
+        if (!args.cardId || !args.filePath)
+          throw new Error(
+            "cardId and filePath are required for upload action"
+          );
+        result = await attachments.uploadAttachment({
+          cardId: args.cardId,
+          filePath: args.filePath,
+        });
+        break;
+
+      case "upload_from_url":
+        if (!args.cardId || !args.url)
+          throw new Error(
+            "cardId and url are required for upload_from_url action"
+          );
+        result = await attachments.uploadAttachmentFromUrl({
+          cardId: args.cardId,
+          url: args.url,
+          filename: args.filename,
+        });
+        break;
+
+      case "delete":
+        if (!args.id) throw new Error("id is required for delete action");
+        result = await attachments.deleteAttachment(args.id);
+        break;
+
+      default:
+        throw new Error(`Unknown action: ${args.action}`);
+    }
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+    };
+  }
+);
+
+// 10. Board Membership Manager
 server.tool(
   "mcp_kanban_membership_manager",
   "Manage board memberships with various operations",

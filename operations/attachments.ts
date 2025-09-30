@@ -10,6 +10,7 @@ import { plankaRequest } from "../common/utils.js";
 import { PlankaAttachmentSchema } from "../common/types.js";
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import FormData from "form-data";
 
 // Schema definitions
@@ -168,7 +169,8 @@ export async function uploadAttachment(options: UploadAttachmentOptions) {
 export async function uploadAttachmentFromUrl(
     options: UploadAttachmentFromUrlOptions,
 ) {
-    const tempDir = path.join(process.cwd(), ".tmp");
+    // Use OS temp directory for better compatibility
+    const tempDir = path.join(os.tmpdir(), "kanban-mcp-attachments");
     let tempFilePath: string | null = null;
 
     try {

@@ -5,7 +5,7 @@ export const PlankaUserSchema = z.object({
   id: z.string(),
   email: z.string(),
   name: z.string().nullable(),
-  username: z.string(),
+  username: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string().nullable(),

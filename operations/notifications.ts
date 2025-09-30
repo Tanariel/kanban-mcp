@@ -111,20 +111,21 @@ export async function getNotification(id: string) {
  */
 export async function markNotificationsAsRead(ids: string[]) {
     try {
-        const response = await plankaRequest("/api/notifications", {
-            method: "PATCH",
-            body: {
-                ids,
-                isRead: true,
-            },
-        });
+        // Planka v1 requires updating notifications individually
+        const updates = await Promise.all(
+            ids.map(async (id) => {
+                const response = await plankaRequest(`/api/notifications/${id}`, {
+                    method: "PATCH",
+                    body: {
+                        isRead: true,
+                    },
+                });
+                const parsedResponse = NotificationResponseSchema.parse(response);
+                return parsedResponse.item;
+            }),
+        );
 
-        // Response is an array of updated notifications
-        const NotificationsArraySchema = z.object({
-            items: z.array(PlankaNotificationSchema),
-        });
-        const parsedResponse = NotificationsArraySchema.parse(response);
-        return parsedResponse.items;
+        return updates;
     } catch (error) {
         throw new Error(
             `Failed to mark notifications as read: ${

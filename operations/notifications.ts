@@ -120,8 +120,17 @@ export async function markNotificationsAsRead(ids: string[]) {
                         isRead: true,
                     },
                 });
-                const parsedResponse = NotificationResponseSchema.parse(response);
-                return parsedResponse.item;
+
+                // Handle empty response (already read notification or 204)
+                if (!response || response === "" || typeof response !== "object") {
+                    // Fetch the notification to return its current state
+                    const notification = await getNotification(id);
+                    return notification;
+                }
+
+                // PATCH response returns the notification directly, not wrapped in { item: ... }
+                const parsedResponse = PlankaNotificationSchema.parse(response);
+                return parsedResponse;
             }),
         );
 
